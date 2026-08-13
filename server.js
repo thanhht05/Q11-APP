@@ -26,19 +26,37 @@ const storage = new CloudinaryStorage({
     params: {
         folder: 'mp3_player_uploads', // The folder in your Cloudinary account
         resource_type: 'video', // Cloudinary uses 'video' for all audio and video files
-        allowed_formats: ['mp3', 'wav', 'ogg', 'mpeg']
+        allowed_formats: ['mp3', 'wav', 'ogg', 'mpeg'],
+        // Use the original filename (without extension) as the Cloudinary public_id
+        public_id: (req, file) => file.originalname.split('.').slice(0, -1).join('.')
     }
 });
 
 const upload = multer({ storage: storage });
 
-// In-memory array to simulate a database. 
-// For a production app, use SQLite or MongoDB.
-let savedPlaylist = [];
-
 // API: Get the current playlist
-app.get('/api/playlist', (req, res) => {
-    res.json(savedPlaylist);
+app.get('/api/playlist', async (req, res) => {
+    try {
+        // Fetch list of files directly from Cloudinary
+        const result = await cloudinary.api.resources({
+            type: 'upload',
+            prefix: 'mp3_player_uploads/',
+            resource_type: 'video', // Cloudinary classifies audio as 'video'
+            max_results: 100 // Adjust if you have more than 100 songs
+        });
+
+        // Map Cloudinary results to the format the frontend expects
+        const songs = result.resources.map(file => ({
+            id: file.public_id,
+            name: file.filename, // Note: existing files will have random names
+            url: file.secure_url
+        }));
+
+        res.json(songs);
+    } catch (error) {
+        console.error('Error fetching from Cloudinary:', error);
+        res.status(500).json({ error: 'Failed to fetch playlist from Cloudinary' });
+    }
 });
 
 // API: Upload MP3 files
@@ -60,9 +78,6 @@ app.post('/api/upload', (req, res) => {
                 name: file.originalname,
                 url: file.path // Cloudinary URL
             }));
-
-            // Add to our "database"
-            savedPlaylist = [...savedPlaylist, ...newSongs];
 
             res.json({ message: 'Upload successful', songs: newSongs });
         } catch (error) {
