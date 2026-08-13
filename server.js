@@ -1,7 +1,9 @@
+require('dotenv').config();
 const express = require('express');
 const multer = require('multer');
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const cloudinary = require('cloudinary').v2;
 const cors = require('cors');
-const fs = require('fs');
 const path = require('path');
 
 const app = express();
@@ -13,34 +15,20 @@ app.use(express.static(path.join(__dirname)));
 // Serve uploaded MP3s
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Ensure uploads directory exists
-const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir);
-}
+// Cloudinary Configuration
+// It automatically picks up CLOUDINARY_URL from the .env file!
 
-// Multer storage configuration
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, uploadsDir);
-    },
-    filename: (req, file, cb) => {
-        // Replace spaces with underscores to avoid URL issues
-        const safeName = file.originalname.replace(/\s+/g, '_');
-        cb(null, Date.now() + '-' + safeName);
+// Multer storage configuration for Cloudinary
+const storage = new CloudinaryStorage({
+    cloudinary: cloudinary,
+    params: {
+        folder: 'mp3_player_uploads', // The folder in your Cloudinary account
+        resource_type: 'video', // Cloudinary uses 'video' for all audio and video files
+        allowed_formats: ['mp3', 'wav', 'ogg', 'mpeg']
     }
 });
 
-const upload = multer({ 
-    storage,
-    fileFilter: (req, file, cb) => {
-        if (file.mimetype.startsWith('audio/') || file.originalname.endsWith('.mp3')) {
-            cb(null, true);
-        } else {
-            cb(new Error('Only audio files are allowed!'), false);
-        }
-    }
-});
+const upload = multer({ storage: storage });
 
 // In-memory array to simulate a database. 
 // For a production app, use SQLite or MongoDB.
@@ -59,9 +47,9 @@ app.post('/api/upload', upload.array('files'), (req, res) => {
         }
 
         const newSongs = req.files.map(file => ({
-            id: file.filename,
+            id: file.filename, // Cloudinary public_id
             name: file.originalname,
-            url: `/uploads/${file.filename}`
+            url: file.path // Cloudinary URL
         }));
 
         // Add to our "database"
