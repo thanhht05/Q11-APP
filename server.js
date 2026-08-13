@@ -16,7 +16,9 @@ app.use(express.static(path.join(__dirname)));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Cloudinary Configuration
-// It automatically picks up CLOUDINARY_URL from the .env file!
+// It automatically picks up CLOUDINARY_URL from the .env file if available.
+// Explicitly initialize config to ensure environment variables are read.
+cloudinary.config(true);
 
 // Multer storage configuration for Cloudinary
 const storage = new CloudinaryStorage({
@@ -40,25 +42,34 @@ app.get('/api/playlist', (req, res) => {
 });
 
 // API: Upload MP3 files
-app.post('/api/upload', upload.array('files'), (req, res) => {
-    try {
-        if (!req.files || req.files.length === 0) {
-            return res.status(400).json({ error: 'No files uploaded' });
+app.post('/api/upload', (req, res) => {
+    upload.array('files')(req, res, (err) => {
+        if (err) {
+            console.error('Upload Error:', err);
+            // Return JSON error response instead of Express's default HTML
+            return res.status(500).json({ error: err.message || 'File upload failed.' });
         }
 
-        const newSongs = req.files.map(file => ({
-            id: file.filename, // Cloudinary public_id
-            name: file.originalname,
-            url: file.path // Cloudinary URL
-        }));
+        try {
+            if (!req.files || req.files.length === 0) {
+                return res.status(400).json({ error: 'No files uploaded' });
+            }
 
-        // Add to our "database"
-        savedPlaylist = [...savedPlaylist, ...newSongs];
+            const newSongs = req.files.map(file => ({
+                id: file.filename, // Cloudinary public_id
+                name: file.originalname,
+                url: file.path // Cloudinary URL
+            }));
 
-        res.json({ message: 'Upload successful', songs: newSongs });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
+            // Add to our "database"
+            savedPlaylist = [...savedPlaylist, ...newSongs];
+
+            res.json({ message: 'Upload successful', songs: newSongs });
+        } catch (error) {
+            console.error('Error processing upload:', error);
+            res.status(500).json({ error: error.message });
+        }
+    });
 });
 
 app.listen(PORT, () => {
